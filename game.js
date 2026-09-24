@@ -158,11 +158,12 @@ class Asteroid {
 
 // ── Skins de nave ─────────────────────────────────────────────────────────────
 const SKINS = [
-  { name: 'CLÁSICA',  color: '#ffffff', flame: 'rgba(255, 130, 0, 0.85)',  shape: 'classic' },
-  { name: 'CAZA',     color: '#33ff88', flame: 'rgba(51, 255, 136, 0.9)',   shape: 'dart' },
-  { name: 'TITÁN',    color: '#ff8833', flame: 'rgba(255, 136, 51, 0.9)',   shape: 'heavy' },
-  { name: 'FANTASMA', color: '#cc66ff', flame: 'rgba(204, 102, 255, 0.9)',  shape: 'needle' },
-  { name: 'ORO',      color: '#ffcc33', flame: 'rgba(255, 204, 51, 0.9)',   shape: 'classic' },
+  { name: 'CLÁSICA',  color: '#ffffff', flame: 'rgba(255, 130, 0, 0.85)',  shape: 'classic', scale: 1, scoreMult: 1 },
+  { name: 'CAZA',     color: '#33ff88', flame: 'rgba(51, 255, 136, 0.9)',   shape: 'dart',    scale: 1, scoreMult: 1 },
+  { name: 'TITÁN',    color: '#ff8833', flame: 'rgba(255, 136, 51, 0.9)',   shape: 'heavy',   scale: 1, scoreMult: 1 },
+  { name: 'FANTASMA', color: '#cc66ff', flame: 'rgba(204, 102, 255, 0.9)',  shape: 'needle',  scale: 1, scoreMult: 1 },
+  { name: 'ORO',      color: '#ffcc33', flame: 'rgba(255, 204, 51, 0.9)',   shape: 'classic', scale: 1, scoreMult: 1 },
+  { name: 'MORADA',   color: '#a855f7', flame: 'rgba(168, 85, 247, 0.9)',   shape: 'classic', scale: 2, scoreMult: 2 },
 ];
 const SKIN_STORAGE_KEY = 'asteroids-skin';
 let currentSkinId = 0;
@@ -170,6 +171,18 @@ let skinFlashTimer = 0;
 
 function getSkin(id) {
   return SKINS[id] || SKINS[0];
+}
+
+function getShipScale() {
+  return getSkin(currentSkinId).scale || 1;
+}
+
+function getScoreMult() {
+  return getSkin(currentSkinId).scoreMult || 1;
+}
+
+function addScore(base) {
+  score += base * getScoreMult();
 }
 
 function loadStoredSkin() {
@@ -184,6 +197,7 @@ function setSkin(id) {
   if (!Number.isInteger(id) || id < 0 || id >= SKINS.length || id === currentSkinId) return;
   currentSkinId = id;
   skinFlashTimer = 1.5;
+  if (typeof ship !== 'undefined' && ship) ship.radius = 12 * getShipScale();
   try {
     localStorage.setItem(SKIN_STORAGE_KEY, String(id));
   } catch (e) { /* ignorar: el juego sigue sin persistencia */ }
@@ -201,7 +215,7 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
+    this.radius = 12 * getShipScale();
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -213,6 +227,8 @@ class Ship {
 
   update(dt) {
     if (this.dead) return;
+    // El radio depende de la skin activa (MORADA es el doble de grande)
+    this.radius = 12 * getShipScale();
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedBoost    > 0) this.speedBoost     = Math.max(0, this.speedBoost - dt);
@@ -241,13 +257,14 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const scale = getShipScale();
+    const NOSE = 21 * scale;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     if (this.tripleShot <= 0) return [new Bullet(ox, oy, this.angle)];
     // Triple shot: 3 balas paralelas en línea recta, separadas lateralmente
     const perp = this.angle + Math.PI / 2;
-    const GAP = 8;
+    const GAP = 8 * scale;
     return [-GAP, 0, GAP].map(o =>
       new Bullet(ox + Math.cos(perp) * o, oy + Math.sin(perp) * o, this.angle)
     );
@@ -261,6 +278,7 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+    ctx.scale(getShipScale(), getShipScale());
     const boosted = this.speedBoost > 0;
     const triple = this.tripleShot > 0;
     const skin = getSkin(currentSkinId);
@@ -658,7 +676,7 @@ function update(dt) {
     bullets.push(...ship.tryShoot());
   }
 
-  // Cambio de skin con teclas 1-5 (una llamada a pressed() por código y frame)
+  // Cambio de skin con teclas 1-6 (una llamada a pressed() por código y frame)
   for (let i = 0; i < SKINS.length; i++) {
     if (pressed(`Digit${i + 1}`)) setSkin(i);
   }
@@ -727,7 +745,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        addScore(a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]);
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
       }
@@ -742,7 +760,7 @@ function update(dt) {
     for (const a of asteroids) {
       if (!a.dead && dist(ship, a) < ship.radius + a.radius * 0.82) {
         a.dead = true;
-        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        addScore(a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]);
         explode(a.x, a.y, a.size * 5);
         shieldHits.push(...a.split());
       }
@@ -799,6 +817,9 @@ function drawHUD() {
   ctx.textAlign = 'left';
   ctx.fillStyle = skin.color;
   ctx.fillText(`NAVE ${skin.name}  [1-${SKINS.length}]`, 14, H - 14);
+  if ((skin.scoreMult || 1) > 1) {
+    ctx.fillText(`PUNTOS x${skin.scoreMult}`, 14, H - 32);
+  }
 
   // Confirmación temporal al cambiar de skin
   if (skinFlashTimer > 0) {
